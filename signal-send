@@ -13,7 +13,7 @@ MESSAGE="$*"
 PROJECT="${SIGNAL_PROJECT:-$(basename "$PWD" | sed 's/^claude-//')}"
 MESSAGE="[$PROJECT] $MESSAGE"
 
-RECIPIENT="${SEND_TO:-$OWNER_NUMBER}"
+RECIPIENT="${SEND_TO:-$OWNER_UUID}"
 
 RESPONSE=$(curl -sf -X POST "http://localhost:${HTTP_PORT}/api/v1/rpc" \
     -H "Content-Type: application/json" \
@@ -29,4 +29,8 @@ if [ -n "$ERROR" ]; then
     echo "ERROR: $ERROR"
     exit 1
 fi
+# Log outgoing message so signal-read --new shows both sides
+LOG="${LOG_FILE:-$HOME/.local/share/signal-bridge/messages.log}"
+TS=$(date '+%Y-%m-%d %H:%M:%S')
+echo "{\"timestamp\":\"$TS\",\"sender\":\"bridge\",\"message\":\"$MESSAGE\"}" >> "$LOG"
 echo "sent"

@@ -123,25 +123,26 @@ read -rp "Enter the verification code: " VERIFY_CODE
 info "Registration complete!"
 echo ""
 
-# Configure allowed senders
+# Configure allowed senders — phone number used temporarily until UUID is discovered
 echo "Who can send you messages through this bridge?"
-echo "(Your main phone number — the one you'll message FROM)"
-read -rp "Allowed sender number (e.g., +12125559999): " OWNER_NUMBER
-[ -z "$OWNER_NUMBER" ] && error "Sender number is required"
+echo "(Your main phone number — used only for initial setup, then auto-replaced with UUID)"
+read -rp "Your phone number (e.g., +12125559999): " OWNER_NUMBER
+[ -z "$OWNER_NUMBER" ] && error "Phone number is required"
 
-# Write config — absolute paths so scripts work from anywhere
+# Write config — phone number is temporary, replaced by UUID after first message
 cat > "$CONFIG_DIR/config" <<EOF
 SIGNAL_NUMBER="$SIGNAL_NUMBER"
-OWNER_NUMBER="$OWNER_NUMBER"
+OWNER_UUID="pending"
 SEND_TO="$OWNER_NUMBER"
 HTTP_PORT="8080"
 TCP_PORT="7583"
 LOG_FILE="$LOG_DIR/messages.log"
 ALLOWED_SENDERS="$OWNER_NUMBER"
+BOOTSTRAP_NUMBER="$OWNER_NUMBER"
 REPO_DIR="$REPO_DIR"
 EOF
 chmod 600 "$CONFIG_DIR/config"
-info "Config written to $CONFIG_DIR/config"
+info "Config written to $CONFIG_DIR/config (phone number is temporary — will be replaced with UUID)"
 
 # Symlink scripts into PATH (points back to repo)
 ln -sf "$REPO_DIR/signal-send" "$LINK_DIR/signal-send"

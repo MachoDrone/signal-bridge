@@ -34,9 +34,9 @@ def extract_message(data):
     # Direct message from someone else
     dm = envelope.get("dataMessage")
     if dm and dm.get("message"):
-        sender = envelope.get("sourceName") or envelope.get("sourceNumber", "unknown")
-        source = envelope.get("sourceNumber", "")
-        return sender, source, dm["message"]
+        sender = envelope.get("sourceName") or "unknown"
+        source_id = envelope.get("sourceUuid", "")
+        return sender, source_id, dm["message"]
 
     # Sync message (Note to Self or sent from another linked device)
     sm = envelope.get("syncMessage", {}).get("sentMessage")
@@ -44,12 +44,50 @@ def extract_message(data):
         dest = sm.get("destinationNumber") or sm.get("destination", "")
         # Note to Self: destination is our own account number
         if dest == account or not dest:
-            source = envelope.get("sourceNumber", "")
-            return "self", source, sm["message"]
+            source_id = envelope.get("sourceUuid", "")
+            return "self", source_id, sm["message"]
         # Message sent to someone else — ignore
         return None, None, None
 
     return None, None, None
+
+
+def upgrade_to_uuid(cfg, envelope):
+    """After first message from the bootstrap number, swap config to UUID and scrub the phone number."""
+    config_path = os.path.expanduser("~/.config/signal-bridge/config")
+    bootstrap = cfg.get("BOOTSTRAP_NUMBER", "")
+    if not bootstrap:
+        return  # already upgraded
+
+    source_number = envelope.get("sourceNumber", "")
+    source_uuid = envelope.get("sourceUuid", "")
+    if not source_uuid or source_number != bootstrap:
+        return  # not from the owner, skip
+
+    # Rewrite config with UUID, remove phone number
+    lines = []
+    with open(config_path) as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("OWNER_UUID="):
+                lines.append(f'OWNER_UUID="{source_uuid}"\n')
+            elif stripped.startswith("SEND_TO="):
+                lines.append(f'SEND_TO="{source_uuid}"\n')
+            elif stripped.startswith("ALLOWED_SENDERS="):
+                # Replace phone number with UUID, keep any existing UUIDs
+                old = stripped.split("=", 1)[1].strip('"')
+                parts = [s.strip() for s in old.split(",")]
+                new_parts = [source_uuid if s == bootstrap else s for s in parts]
+                lines.append(f'ALLOWED_SENDERS="{",".join(new_parts)}"\n')
+            elif stripped.startswith("BOOTSTRAP_NUMBER="):
+                continue  # remove the bootstrap number entirely
+            else:
+                lines.append(line)
+
+    with open(config_path, "w") as f:
+        f.writelines(lines)
+    os.chmod(config_path, 0o600)
+    print(f"UUID upgrade complete: {source_uuid}. Phone number scrubbed from config.", flush=True)
 
 
 def main():
@@ -97,6 +135,14 @@ def main():
                     if not text:
                         continue
 
+                    # Auto-upgrade from phone number to UUID on first message
+                    envelope = msg.get("params", {}).get("envelope", {})
+                    if cfg.get("BOOTSTRAP_NUMBER"):
+                        upgrade_to_uuid(cfg, envelope)
+                        # Reload config and allowed set after upgrade
+                        cfg = load_config()
+                        allowed = set(s.strip() for s in cfg.get("ALLOWED_SENDERS", "").split(",") if s.strip())
+
                     # Filter by allowed senders (self/Note to Self always allowed)
                     if allowed and sender != "self" and source not in allowed:
                         continue
@@ -105,7 +151,6 @@ def main():
                     entry = json.dumps({
                         "timestamp": ts,
                         "sender": sender,
-                        "source": source,
                         "message": text,
                     })
                     with open(log_file, "a") as f:

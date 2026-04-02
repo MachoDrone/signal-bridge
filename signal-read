@@ -9,32 +9,44 @@ source "$CONFIG"
 
 LOG="${LOG_FILE:-$HOME/.local/share/signal-bridge/messages.log}"
 PROJECT="${SIGNAL_PROJECT:-$(basename "$PWD" | sed 's/^claude-//')}"
+MARKER="$HOME/.local/share/signal-bridge/.read-marker-${PROJECT}"
 
 usage() {
-    echo "Usage: signal-read [--wait] [--last N] [--clear] [--all]"
+    echo "Usage: signal-read [--wait] [--last N] [--new] [--all] [--clear]"
     echo "  (no args)   Show last 10 messages for this project ($PROJECT)"
     echo "  --wait      Block until a message for this project arrives"
+    echo "  --new       Show only unseen messages since last --new call (no duplicates)"
     echo "  --last N    Show last N messages for this project (default: 10)"
     echo "  --all       Show all messages, ignore project filter"
     echo "  --clear     Clear the message log"
     exit 0
 }
 
-# Filter: only messages starting with "project:" (case-insensitive)
-filter_project() {
-    jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
-}
-
 case "${1:-}" in
     --wait)
         [ ! -f "$LOG" ] && touch "$LOG"
-        tail -n0 -f "$LOG" | while IFS= read -r line; do
+        trap 'exit 0' EXIT
+        while IFS= read -r line; do
             MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null)
             if [ -n "$MATCH" ]; then
                 echo "$MATCH"
                 break
             fi
-        done
+        done < <(tail -n0 -f "$LOG")
+        exit 0
+        ;;
+    --new)
+        [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
+        LAST_READ=0
+        [ -f "$MARKER" ] && LAST_READ=$(cat "$MARKER")
+        TOTAL=$(wc -l < "$LOG")
+        if [ "$TOTAL" -le "$LAST_READ" ]; then
+            echo "No new messages."
+        else
+            SKIP=$((LAST_READ))
+            tail -n +"$((SKIP + 1))" "$LOG" | jq -r --arg pfx "$PROJECT" 'select(.sender != "bridge" and (.message | test("^" + $pfx + ":"))) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        fi
+        echo "$TOTAL" > "$MARKER"
         ;;
     --last)
         N="${2:-10}"
@@ -47,6 +59,7 @@ case "${1:-}" in
         ;;
     --clear)
         > "$LOG"
+        rm -f "$MARKER"
         echo "Log cleared."
         ;;
     --help|-h)
