@@ -50,14 +50,13 @@ info "Latest version: $LATEST"
 
 NATIVE_URL="https://github.com/AsamK/signal-cli/releases/download/v${LATEST}/signal-cli-${LATEST}-Linux-native.tar.gz"
 JAVA_URL="https://github.com/AsamK/signal-cli/releases/download/v${LATEST}/signal-cli-${LATEST}.tar.gz"
-SIGNAL_CLI_DIR="$BIN_DIR/signal-cli-native"
+SIGNAL_CLI="$BIN_DIR/signal-cli"
 
 if curl -sfL --head "$NATIVE_URL" >/dev/null 2>&1; then
     info "Downloading native binary (no Java required)..."
     TMP=$(mktemp -d)
     curl -sfL "$NATIVE_URL" | tar xz -C "$TMP"
-    rm -rf "$SIGNAL_CLI_DIR"
-    mv "$TMP"/signal-cli*/ "$SIGNAL_CLI_DIR"
+    cp "$TMP"/signal-cli "$SIGNAL_CLI" 2>/dev/null || cp "$TMP"/signal-cli*/bin/signal-cli "$SIGNAL_CLI" 2>/dev/null || error "Could not find signal-cli in download"
     rm -rf "$TMP"
     info "Native binary downloaded"
 elif command -v java >/dev/null; then
@@ -66,15 +65,15 @@ elif command -v java >/dev/null; then
     info "No native binary available. Downloading Java version..."
     TMP=$(mktemp -d)
     curl -sfL "$JAVA_URL" | tar xz -C "$TMP"
-    rm -rf "$SIGNAL_CLI_DIR"
-    mv "$TMP"/signal-cli*/ "$SIGNAL_CLI_DIR"
+    EXTRACTED=$(ls -d "$TMP"/signal-cli*/ 2>/dev/null | head -1)
+    [ -n "$EXTRACTED" ] || error "Could not find signal-cli in download"
+    cp "$EXTRACTED/bin/signal-cli" "$SIGNAL_CLI"
     rm -rf "$TMP"
     info "Java version downloaded"
 else
     error "No native binary available and Java not found. Install Java 21+ or try again later."
 fi
 
-SIGNAL_CLI="$SIGNAL_CLI_DIR/bin/signal-cli"
 chmod +x "$SIGNAL_CLI"
 
 # Verify binary works
