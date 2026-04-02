@@ -22,14 +22,14 @@ usage() {
 
 # Filter: only messages starting with "project:" (case-insensitive)
 filter_project() {
-    jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":"; "i")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+    jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
 }
 
 case "${1:-}" in
     --wait)
         [ ! -f "$LOG" ] && touch "$LOG"
         tail -n0 -f "$LOG" | while IFS= read -r line; do
-            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":"; "i")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null)
+            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null)
             if [ -n "$MATCH" ]; then
                 echo "$MATCH"
                 break
@@ -39,7 +39,7 @@ case "${1:-}" in
     --last)
         N="${2:-10}"
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        grep -i "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n "$N" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        grep "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n "$N" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
         ;;
     --all)
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
@@ -54,6 +54,6 @@ case "${1:-}" in
         ;;
     *)
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        grep -i "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n 10 | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        grep "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n 10 | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
         ;;
 esac
