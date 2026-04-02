@@ -27,7 +27,7 @@ case "${1:-}" in
         [ ! -f "$LOG" ] && touch "$LOG"
         trap 'exit 0' EXIT
         while IFS= read -r line; do
-            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null)
+            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.message)"' 2>/dev/null)
             if [ -n "$MATCH" ]; then
                 echo "$MATCH"
                 break
@@ -44,18 +44,18 @@ case "${1:-}" in
             echo "No new messages."
         else
             SKIP=$((LAST_READ))
-            tail -n +"$((SKIP + 1))" "$LOG" | jq -r --arg pfx "$PROJECT" 'select(.sender != "bridge" and (.message | test("^" + $pfx + ":"))) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+            tail -n +"$((SKIP + 1))" "$LOG" | jq -r --arg pfx "$PROJECT" 'select(.sender != "bridge" and (.message | test("^" + $pfx + ":"))) | "\(.message)"' 2>/dev/null
         fi
         echo "$TOTAL" > "$MARKER"
         ;;
     --last)
         N="${2:-10}"
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        grep "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n "$N" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        grep "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n "$N" | jq -r '"\(.message)"' 2>/dev/null
         ;;
     --all)
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        tail -n 10 "$LOG" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        tail -n 10 "$LOG" | jq -r '"\(.message)"' 2>/dev/null
         ;;
     --clear)
         > "$LOG"
@@ -67,6 +67,6 @@ case "${1:-}" in
         ;;
     *)
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        grep "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n 10 | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        grep "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n 10 | jq -r '"\(.message)"' 2>/dev/null
         ;;
 esac

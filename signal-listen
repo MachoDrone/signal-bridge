@@ -34,9 +34,15 @@ def extract_message(data):
     # Direct message from someone else
     dm = envelope.get("dataMessage")
     if dm and dm.get("message"):
-        sender = envelope.get("sourceName") or "unknown"
-        source_id = envelope.get("sourceUuid", "")
-        return sender, source_id, dm["message"]
+        group_info = dm.get("groupInfo")
+        if group_info:
+            # Group message — anonymous sender, identify by group only
+            group_id = group_info.get("groupId", "group")
+            return "group", group_id, dm["message"]
+        else:
+            # DM — no identifier, use UUID for filtering only
+            source_id = envelope.get("sourceUuid", "")
+            return "dm", source_id, dm["message"]
 
     # Sync message (Note to Self or sent from another linked device)
     sm = envelope.get("syncMessage", {}).get("sentMessage")
@@ -147,15 +153,13 @@ def main():
                     if allowed and sender != "self" and source not in allowed:
                         continue
 
-                    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     entry = json.dumps({
-                        "timestamp": ts,
                         "sender": sender,
                         "message": text,
                     })
                     with open(log_file, "a") as f:
                         f.write(entry + "\n")
-                    print(f"[{ts}] {sender}: {text}", flush=True)
+                    print(f"{sender}: {text}", flush=True)
 
         except ConnectionRefusedError:
             print("Daemon not available, retrying in 5s...", flush=True)
