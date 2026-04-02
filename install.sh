@@ -57,7 +57,7 @@ if curl -sfL --head "$NATIVE_URL" >/dev/null 2>&1; then
     TMP=$(mktemp -d)
     curl -sfL "$NATIVE_URL" | tar xz -C "$TMP"
     rm -rf "$SIGNAL_CLI_DIR"
-    mv "$TMP"/signal-cli-*/ "$SIGNAL_CLI_DIR"
+    mv "$TMP"/signal-cli*/ "$SIGNAL_CLI_DIR"
     rm -rf "$TMP"
     info "Native binary downloaded"
 elif command -v java >/dev/null; then
@@ -67,7 +67,7 @@ elif command -v java >/dev/null; then
     TMP=$(mktemp -d)
     curl -sfL "$JAVA_URL" | tar xz -C "$TMP"
     rm -rf "$SIGNAL_CLI_DIR"
-    mv "$TMP"/signal-cli-*/ "$SIGNAL_CLI_DIR"
+    mv "$TMP"/signal-cli*/ "$SIGNAL_CLI_DIR"
     rm -rf "$TMP"
     info "Java version downloaded"
 else
