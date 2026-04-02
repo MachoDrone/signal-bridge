@@ -1,0 +1,44 @@
+#!/bin/bash
+# Read messages from the Signal bridge log
+set -euo pipefail
+
+CONFIG="$HOME/.config/signal-bridge/config"
+[ -f "$CONFIG" ] || { echo "Config not found: $CONFIG"; exit 1; }
+source "$CONFIG"
+
+LOG="${LOG_FILE:-$HOME/.local/share/signal-bridge/messages.log}"
+
+usage() {
+    echo "Usage: signal-read [--wait] [--last N] [--clear]"
+    echo "  (no args)   Show last 10 messages"
+    echo "  --wait      Block until a new message arrives"
+    echo "  --last N    Show last N messages (default: 10)"
+    echo "  --clear     Clear the message log"
+    exit 0
+}
+
+case "${1:-}" in
+    --wait)
+        [ ! -f "$LOG" ] && touch "$LOG"
+        tail -n0 -f "$LOG" | while IFS= read -r line; do
+            echo "$line" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null || echo "$line"
+            break
+        done
+        ;;
+    --last)
+        N="${2:-10}"
+        [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
+        tail -n "$N" "$LOG" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        ;;
+    --clear)
+        > "$LOG"
+        echo "Log cleared."
+        ;;
+    --help|-h)
+        usage
+        ;;
+    *)
+        [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
+        tail -n 10 "$LOG" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        ;;
+esac

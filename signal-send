@@ -1,0 +1,32 @@
+#!/bin/bash
+# Send a message via Signal CLI daemon
+set -euo pipefail
+
+CONFIG="$HOME/.config/signal-bridge/config"
+[ -f "$CONFIG" ] || { echo "Config not found: $CONFIG"; exit 1; }
+source "$CONFIG"
+
+MESSAGE="$*"
+[ -z "$MESSAGE" ] && { echo "Usage: signal-send <message>"; exit 1; }
+
+# Tag with project name from SIGNAL_PROJECT env var, or derive from cwd
+PROJECT="${SIGNAL_PROJECT:-$(basename "$PWD" | sed 's/^claude-//')}"
+MESSAGE="[$PROJECT] $MESSAGE"
+
+RECIPIENT="${SEND_TO:-$OWNER_NUMBER}"
+
+RESPONSE=$(curl -sf -X POST "http://localhost:${HTTP_PORT}/api/v1/rpc" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+        --arg msg "$MESSAGE" \
+        --arg rcpt "$RECIPIENT" \
+        --arg acct "$SIGNAL_NUMBER" \
+        '{jsonrpc:"2.0", method:"send", id:1, params:{account:$acct, recipients:[$rcpt], message:$msg}}'
+    )" 2>&1) || { echo "ERROR: daemon not running or unreachable"; exit 1; }
+
+ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty')
+if [ -n "$ERROR" ]; then
+    echo "ERROR: $ERROR"
+    exit 1
+fi
+echo "sent"

@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+Connects to signal-cli daemon via TCP, logs incoming messages to a file.
+Filters by allowed senders. Reconnects on disconnect.
+"""
+import socket
+import json
+import os
+import time
+from datetime import datetime
+
+MAX_BUF = 1024 * 1024  # 1MB max buffer before disconnect
+
+
+def load_config():
+    config_path = os.path.expanduser("~/.config/signal-bridge/config")
+    cfg = {}
+    with open(config_path) as f:
+        for line in f:
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                key, val = line.split("=", 1)
+                val = val.strip().strip('"')
+                val = os.path.expandvars(val)
+                cfg[key.strip()] = val
+    return cfg
+
+
+def extract_message(data):
+    """Extract sender and text from a JSON-RPC receive notification."""
+    envelope = data.get("params", {}).get("envelope", {})
+    account = data.get("params", {}).get("account", "")
+
+    # Direct message from someone else
+    dm = envelope.get("dataMessage")
+    if dm and dm.get("message"):
+        sender = envelope.get("sourceName") or envelope.get("sourceNumber", "unknown")
+        source = envelope.get("sourceNumber", "")
+        return sender, source, dm["message"]
+
+    # Sync message (Note to Self or sent from another linked device)
+    sm = envelope.get("syncMessage", {}).get("sentMessage")
+    if sm and sm.get("message"):
+        dest = sm.get("destinationNumber") or sm.get("destination", "")
+        # Note to Self: destination is our own account number
+        if dest == account or not dest:
+            source = envelope.get("sourceNumber", "")
+            return "self", source, sm["message"]
+        # Message sent to someone else — ignore
+        return None, None, None
+
+    return None, None, None
+
+
+def main():
+    cfg = load_config()
+    host = "localhost"
+    port = int(cfg.get("TCP_PORT", "7583"))
+    log_file = cfg.get("LOG_FILE", os.path.expanduser("~/.local/share/signal-bridge/messages.log"))
+    allowed = set(s.strip() for s in cfg.get("ALLOWED_SENDERS", "").split(",") if s.strip())
+
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+    while True:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((host, port))
+            print(f"Connected to daemon at {host}:{port}", flush=True)
+
+            buf = b""
+            while True:
+                data = sock.recv(8192)
+                if not data:
+                    print("Daemon disconnected", flush=True)
+                    break
+
+                buf += data
+                if len(buf) > MAX_BUF:
+                    print("Buffer overflow, reconnecting", flush=True)
+                    break
+
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if not line.strip():
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        print(f"Malformed JSON: {line[:100]}", flush=True)
+                        continue
+
+                    if msg.get("method") != "receive":
+                        continue
+
+                    sender, source, text = extract_message(msg)
+                    if not text:
+                        continue
+
+                    # Filter by allowed senders (self/Note to Self always allowed)
+                    if allowed and sender != "self" and source not in allowed:
+                        continue
+
+                    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    entry = json.dumps({
+                        "timestamp": ts,
+                        "sender": sender,
+                        "source": source,
+                        "message": text,
+                    })
+                    with open(log_file, "a") as f:
+                        f.write(entry + "\n")
+                    print(f"[{ts}] {sender}: {text}", flush=True)
+
+        except ConnectionRefusedError:
+            print("Daemon not available, retrying in 5s...", flush=True)
+        except Exception as e:
+            print(f"Error: {e}", flush=True)
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+
+        time.sleep(5)
+
+
+if __name__ == "__main__":
+    main()
