@@ -1,5 +1,6 @@
 #!/bin/bash
 # Read messages from the Signal bridge log
+# Filters by project prefix derived from cwd (strips leading "claude-")
 set -euo pipefail
 
 CONFIG="$HOME/.config/signal-bridge/config"
@@ -7,28 +8,42 @@ CONFIG="$HOME/.config/signal-bridge/config"
 source "$CONFIG"
 
 LOG="${LOG_FILE:-$HOME/.local/share/signal-bridge/messages.log}"
+PROJECT="${SIGNAL_PROJECT:-$(basename "$PWD" | sed 's/^claude-//')}"
 
 usage() {
-    echo "Usage: signal-read [--wait] [--last N] [--clear]"
-    echo "  (no args)   Show last 10 messages"
-    echo "  --wait      Block until a new message arrives"
-    echo "  --last N    Show last N messages (default: 10)"
+    echo "Usage: signal-read [--wait] [--last N] [--clear] [--all]"
+    echo "  (no args)   Show last 10 messages for this project ($PROJECT)"
+    echo "  --wait      Block until a message for this project arrives"
+    echo "  --last N    Show last N messages for this project (default: 10)"
+    echo "  --all       Show all messages, ignore project filter"
     echo "  --clear     Clear the message log"
     exit 0
+}
+
+# Filter: only messages starting with "project:" (case-insensitive)
+filter_project() {
+    jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":"; "i")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
 }
 
 case "${1:-}" in
     --wait)
         [ ! -f "$LOG" ] && touch "$LOG"
         tail -n0 -f "$LOG" | while IFS= read -r line; do
-            echo "$line" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null || echo "$line"
-            break
+            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":"; "i")) | "\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null)
+            if [ -n "$MATCH" ]; then
+                echo "$MATCH"
+                break
+            fi
         done
         ;;
     --last)
         N="${2:-10}"
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        tail -n "$N" "$LOG" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        grep -i "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n "$N" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        ;;
+    --all)
+        [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
+        tail -n 10 "$LOG" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
         ;;
     --clear)
         > "$LOG"
@@ -39,6 +54,6 @@ case "${1:-}" in
         ;;
     *)
         [ ! -f "$LOG" ] && { echo "No messages yet."; exit 0; }
-        tail -n 10 "$LOG" | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
+        grep -i "\"message\":.*\"${PROJECT}:" "$LOG" | tail -n 10 | jq -r '"\(.timestamp) [\(.sender)] \(.message)"' 2>/dev/null
         ;;
 esac
