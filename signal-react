@@ -1,0 +1,36 @@
+#!/bin/bash
+# Send an emoji reaction to the last received message
+set -euo pipefail
+
+CONFIG="$HOME/.config/signal-bridge/config"
+[ -f "$CONFIG" ] || { echo "Config not found: $CONFIG"; exit 1; }
+source "$CONFIG"
+
+EMOJI="${1:-👍}"
+RECIPIENT="${SEND_TO:-$OWNER_UUID}"
+TS_FILE="$(dirname "$LOG_FILE")/.last-msg-ts"
+
+[ -f "$TS_FILE" ] || { echo "No message to react to"; exit 1; }
+
+TARGET_TS=$(jq -r '.timestamp' "$TS_FILE")
+TARGET_AUTHOR=$(jq -r '.author' "$TS_FILE")
+
+[ "$TARGET_TS" = "0" ] || [ -z "$TARGET_TS" ] && { echo "No valid message timestamp"; exit 1; }
+
+RESPONSE=$(curl -sf -X POST "http://localhost:${HTTP_PORT}/api/v1/rpc" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+        --arg emoji "$EMOJI" \
+        --arg rcpt "$RECIPIENT" \
+        --arg acct "$SIGNAL_NUMBER" \
+        --arg author "$TARGET_AUTHOR" \
+        --argjson ts "$TARGET_TS" \
+        '{jsonrpc:"2.0", method:"sendReaction", id:1, params:{account:$acct, recipient:[$rcpt], emoji:$emoji, targetAuthor:$author, targetTimestamp:$ts}}'
+    )" 2>&1) || { echo "ERROR: daemon not running"; exit 1; }
+
+ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty')
+if [ -n "$ERROR" ]; then
+    echo "ERROR: $ERROR"
+    exit 1
+fi
+echo "$EMOJI"

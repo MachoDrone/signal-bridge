@@ -31,8 +31,34 @@ def extract_message(data):
     envelope = data.get("params", {}).get("envelope", {})
     account = data.get("params", {}).get("account", "")
 
-    # Direct message from someone else
+    # Edited message — treat as replacement of original
+    em = envelope.get("editMessage")
+    if em:
+        dm = em.get("dataMessage", {})
+        if dm.get("message"):
+            group_info = dm.get("groupInfo")
+            if group_info:
+                group_id = group_info.get("groupId", "group")
+                return "group", group_id, dm["message"]
+            else:
+                source_id = envelope.get("sourceUuid", "")
+                return "dm", source_id, dm["message"]
+
+    # Emoji reaction
     dm = envelope.get("dataMessage")
+    if dm and dm.get("reaction"):
+        reaction = dm["reaction"]
+        emoji = reaction.get("emoji", "")
+        is_remove = reaction.get("isRemove", False)
+        if not is_remove and emoji:
+            group_info = dm.get("groupInfo")
+            if group_info:
+                return "group", group_info.get("groupId", "group"), f"{emoji}"
+            else:
+                source_id = envelope.get("sourceUuid", "")
+                return "dm", source_id, f"{emoji}"
+
+    # Direct message from someone else
     if dm and dm.get("message"):
         group_info = dm.get("groupInfo")
         if group_info:
@@ -159,6 +185,15 @@ def main():
                     })
                     with open(log_file, "a") as f:
                         f.write(entry + "\n")
+
+                    # Save last message timestamp for signal-react
+                    msg_ts = envelope.get("timestamp", 0)
+                    msg_author = envelope.get("sourceUuid") or envelope.get("sourceNumber", "")
+                    if msg_ts:
+                        ts_file = os.path.join(os.path.dirname(log_file), ".last-msg-ts")
+                        with open(ts_file, "w") as f:
+                            json.dump({"timestamp": msg_ts, "author": msg_author}, f)
+
                     print(f"{sender}: {text}", flush=True)
 
         except ConnectionRefusedError:

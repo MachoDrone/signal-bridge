@@ -44,7 +44,7 @@ case "${1:-}" in
             echo "No new messages."
         else
             SKIP=$((LAST_READ))
-            tail -n +"$((SKIP + 1))" "$LOG" | jq -r --arg pfx "$PROJECT" 'select(.sender != "bridge" and (.message | test("^" + $pfx + ":"))) | "\(.message)"' 2>/dev/null
+            tail -n +"$((SKIP + 1))" "$LOG" | jq -r --arg pfx "$PROJECT" 'select(.sender != "bridge" and ((.message | test("^" + $pfx + ":")) or (.message | test("^\\p{Emoji}")))) | "\(.message)"' 2>/dev/null
         fi
         echo "$TOTAL" > "$MARKER"
         ;;
