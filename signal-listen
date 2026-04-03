@@ -26,7 +26,7 @@ def load_config():
     return cfg
 
 
-def extract_message(data):
+def extract_message(data, cfg=None):
     """Extract sender and text from a JSON-RPC receive notification."""
     envelope = data.get("params", {}).get("envelope", {})
     account = data.get("params", {}).get("account", "")
@@ -44,13 +44,16 @@ def extract_message(data):
                 source_id = envelope.get("sourceUuid", "")
                 return "dm", source_id, dm["message"]
 
-    # Emoji reaction
+    # Emoji reaction — only log if reacting to bridge's own messages
     dm = envelope.get("dataMessage")
     if dm and dm.get("reaction"):
         reaction = dm["reaction"]
         emoji = reaction.get("emoji", "")
         is_remove = reaction.get("isRemove", False)
-        if not is_remove and emoji:
+        target_author_number = reaction.get("targetAuthorNumber", "")
+        # Only care about reactions to messages sent by the bridge account
+        bridge_number = (cfg or {}).get("SIGNAL_NUMBER", "")
+        if not is_remove and emoji and target_author_number == bridge_number:
             group_info = dm.get("groupInfo")
             if group_info:
                 return "group", group_info.get("groupId", "group"), f"{emoji}"
@@ -163,7 +166,7 @@ def main():
                     if msg.get("method") != "receive":
                         continue
 
-                    sender, source, text = extract_message(msg)
+                    sender, source, text = extract_message(msg, cfg)
                     if not text:
                         continue
 

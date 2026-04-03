@@ -27,7 +27,7 @@ case "${1:-}" in
         [ ! -f "$LOG" ] && touch "$LOG"
         trap 'exit 0' EXIT
         while IFS= read -r line; do
-            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select(.message | test("^" + $pfx + ":")) | "\(.message)"' 2>/dev/null)
+            MATCH=$(echo "$line" | jq -r --arg pfx "$PROJECT" 'select((.message | test("^" + $pfx + ":")) or (.sender == "dm" and (.message | test("^\\p{Emoji}")))) | "\(.message)"' 2>/dev/null)
             if [ -n "$MATCH" ]; then
                 echo "$MATCH"
                 break
